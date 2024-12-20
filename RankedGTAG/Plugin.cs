@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using BepInEx;
@@ -24,6 +25,8 @@ namespace RankedGTAG
 
         Image watchColor;
 
+        int roundsCounter;
+
         float mmr;
 
         float delay = 69420;
@@ -40,8 +43,6 @@ namespace RankedGTAG
 
         NetPlayer[] playerList;
         NetPlayer[] allPlayers;
-
-        Dictionary<NetPlayer, VRRig> vrrigs = new Dictionary<NetPlayer, VRRig>();
 
         Dictionary<NetPlayer, object[]> vrrigsPositions = new Dictionary<NetPlayer, object[]>();
 
@@ -85,7 +86,6 @@ namespace RankedGTAG
             {
                 SetWatchActive(true);
                 watchText.text = connectedToWifi ? "\n\nUPDATE!" : "\nCONNECT TO WIFI!";
-                watchColor.color = Color.red;
             }
             Update(); // this was added so Update wouldnt be grayed out, i dispise visual studio, fuck visual studio. why can i not turn that off? Words would get me banned from GTMG if i sayed how much i dispise microsoft and vs. so i will not.
         }
@@ -102,21 +102,21 @@ namespace RankedGTAG
 
                 foreach (var player in allPlayers)
                 {
-                    try { var vrrig = vrrigs[player]; }
+                    try { var vrrig = GetPlayersVRRig(player); }
                     catch { return; }
 
                     Vector3 vrrigOldPos = (Vector3)vrrigsPositions[player][1];
 
-                    vrrigsPositions[player][0] = (vrrigs[player].transform.position.Abs() - vrrigOldPos).magnitude > 2f;
+                    vrrigsPositions[player][0] = (GetPlayersVRRig(player).transform.position.Abs() - vrrigOldPos).magnitude > 2f;
 
-                    vrrigsPositions[player][1] = vrrigs[player].transform.position.Abs();
+                    vrrigsPositions[player][1] = GetPlayersVRRig(player).transform.position.Abs();
                 }
             }
 
 
             var otherPlayer = GorillaTagger.Instance.otherPlayer;
 
-            if (otherPlayer != lastPlayerTagged && otherPlayer != null && !GorillaLocomotion.Player.Instance.disableMovement)
+            if ((otherPlayer ?? lastPlayerTagged) != lastPlayerTagged && !GorillaLocomotion.Player.Instance.disableMovement)
             {
                 lastActuallyTaggedPlayer = otherPlayer;
                 points += allPlayersPoints[otherPlayer] / 20 + 30;
@@ -127,29 +127,25 @@ namespace RankedGTAG
 
             foreach (var player in playerList)
             {
-                bool isPlayerNotMoving = true;
+                bool isPlayerMoving = false;
                 
-                try { isPlayerNotMoving = !(bool)vrrigsPositions[player][0]; } catch { }
+                try { isPlayerMoving = (bool)vrrigsPositions[player][0]; } catch { }
 
-                if (tagManager.currentInfected.Contains(player) || isPlayerNotMoving) continue;
-                try
-                {
-                    allPlayersPoints[player] += Time.deltaTime;
-                }
-                catch
-                {
-                    continue;
-                }
+                if (tagManager.currentInfected.Contains(player) || !isPlayerMoving) continue;
+                
+                allPlayersPoints[player] += Time.deltaTime;
+                
             }
 
-            if (!tagManager.IsInfected(localPlayer)) points += Time.deltaTime * ((bool)vrrigsPositions[localPlayer][0] ? 1 : 0.5f);
+            if (!tagManager.IsInfected(localPlayer)) points += Time.deltaTime * ((bool)vrrigsPositions[localPlayer][0] ? 1 : 0.25f);
 
             if (tagManager.currentInfected.Count == NetworkSystem.Instance.RoomPlayerCount) OnRoundRestarted();
 
 
             
             watchText.text = $"MMR: {Round(mmr, 2)}\nPOINTS: {Round(points)} \n{(tagManager.IsInfected(localPlayer) ? $"LAST TAG:        {(lastActuallyTaggedPlayer == null ? "NONE" : lastActuallyTaggedPlayer.NickName)}" : (bool)vrrigsPositions[localPlayer][0] ? "" : "MOVE!")}";
-            if (lastActuallyTaggedPlayer!=null) watchColor.color = vrrigs[lastActuallyTaggedPlayer].playerColor;
+            if (lastActuallyTaggedPlayer != null) SetMaterialColor(GetPlayersVRRig(lastActuallyTaggedPlayer).playerColor);
+            else { SetMaterialColor(Color.clear); }
         }
 
         
@@ -160,13 +156,27 @@ namespace RankedGTAG
 
             Debug.Log("joined code");
 
-            points = PlayerPrefs.GetFloat("StartingPlayerPoints");
+            
 
             localPlayer = NetworkSystem.Instance.LocalPlayer;
+
+            playerList = NetworkSystem.Instance.PlayerListOthers;
+            allPlayers = NetworkSystem.Instance.AllNetPlayers;
 
             await Task.Delay(500);
 
             SetWatchActive(true);
+
+            points = PlayerPrefs.GetFloat("StartingPlayerPoints");
+
+            foreach (var playerRig in GameObject.FindGameObjectsWithTag("GorillaPlayer"))
+            {
+                var playerVRRig = playerRig.GetComponent<VRRig>();
+
+                vrrigsPositions.TryAdd(playerVRRig.OwningNetPlayer, new object[] { false, Vector3.zero });
+
+                allPlayersPoints.TryAdd(playerVRRig.OwningNetPlayer, 0);
+            }
 
             NetworkSystem.Instance.OnReturnedToSinglePlayer += OnLeftLobby;
 
@@ -179,9 +189,9 @@ namespace RankedGTAG
         void OnLeftLobby()
         {
             allPlayersPoints.Clear();
-            vrrigs.Clear();
             vrrigsPositions.Clear();
             SetWatchActive(false);
+            roundsCounter = 0;
 
             NetworkSystem.Instance.OnReturnedToSinglePlayer -= OnLeftLobby;
 
@@ -195,8 +205,11 @@ namespace RankedGTAG
         {
             playerList = NetworkSystem.Instance.PlayerListOthers;
             allPlayers = NetworkSystem.Instance.AllNetPlayers;
+ 
 
-            SetAllPlayerPoints();
+            vrrigsPositions.TryAdd(player, new object[] { false, Vector3.zero });
+
+            allPlayersPoints.TryAdd(player, 0);
         }
 
         void OnPlayerLeft(NetPlayer player)
@@ -205,25 +218,7 @@ namespace RankedGTAG
             allPlayers = NetworkSystem.Instance.AllNetPlayers;
 
             allPlayersPoints.Remove(player);
-            vrrigs.Remove(player);
             vrrigsPositions.Remove(player);
-        }
-
-        async void SetAllPlayerPoints()
-        {
-            await Task.Delay(100);
-
-            foreach (var player in GameObject.FindGameObjectsWithTag("GorillaPlayer"))
-            {
-                var playerVRRig = player.GetComponent<VRRig>();
-
-                vrrigsPositions.TryAdd(playerVRRig.OwningNetPlayer, new object[] { false, Vector3.zero });
-
-                vrrigs.TryAdd(playerVRRig.OwningNetPlayer, playerVRRig);
-
-                allPlayersPoints.TryAdd(playerVRRig.OwningNetPlayer, 0);
-                
-            }
         }
        
         async void OnRoundRestarted()
@@ -237,7 +232,8 @@ namespace RankedGTAG
 
             Debug.Log (points);
 
-            mmr += points / 10 - mmr;
+            mmr += points / 10 - mmr + 3;
+            roundsCounter++;
 
             PlayerPrefs.SetFloat("PlayerMMR", mmr);
             PlayerPrefs.SetFloat("StartingPlayerPoints", points);
@@ -253,10 +249,12 @@ namespace RankedGTAG
                 allPlayersPointsCopy.Add(point.Key, point.Value);
             }
 
+            
             foreach (var point in allPlayersPointsCopy)
             {
                 Debug.Log(point.Key.NickName + ' ' + point.Value.ToString());
-                allPlayersPoints[point.Key] /= 2;
+                if (roundsCounter > 1) allPlayersPoints[point.Key] /= 2;
+                else allPlayersPoints[point.Key] = 0;
             }
         }
 
@@ -274,12 +272,28 @@ namespace RankedGTAG
 
             watchText = huntComputer.text; 
             watchColor = huntComputer.material;
+            SetMaterialColor(Color.clear);
 
             huntComputer.text.transform.Translate(new Vector3(0, setActive ? 0.005f : -0.005f, 0));
             huntComputer.text.transform.localScale = new Vector3(setActive ? 0.00055f : 0.0007f, setActive ? 0.00055f : 0.0007f, setActive ? 0.00055f : 0.0007f);
 
             huntComputer.enabled = !setActive;
             huntWatch.SetActive(setActive);
+        }
+
+        VRRig GetPlayersVRRig(NetPlayer player) 
+        { 
+            return GameObject.FindGameObjectsWithTag("GorillaPlayer").FirstOrDefault(plyrRig => plyrRig.GetComponent<VRRig>().OwningNetPlayer == player).GetComponent<VRRig>(); 
+        }
+
+        void SetMaterialColor(Color color)
+        {
+            if (color.a != 0f)
+            {
+                watchColor.gameObject.SetActive(true);
+                watchColor.color = color;
+            }
+            else watchColor.gameObject.SetActive(false);
         }
     }
 }
