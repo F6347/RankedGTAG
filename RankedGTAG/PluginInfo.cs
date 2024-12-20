@@ -7,6 +7,6 @@
     {
         public const string GUID = "com.f6347.gorillatag.rankedgtag";
         public const string Name = "RankedGTAG";
-        public const string Version = "1.0.0";
+        public const string Version = "6.9.6";
     }
 }
