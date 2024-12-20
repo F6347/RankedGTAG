@@ -49,6 +49,7 @@ namespace RankedGTAG
 
         bool isLatestUpdate = true;
 
+        bool connectedToWifi = true;
 
         ConfigEntry<bool> requiresUpdate;
 
@@ -58,13 +59,13 @@ namespace RankedGTAG
             requiresUpdate = Config.Bind("General",
                 "requiresUpdate",
                 true,
-                "Displays a warning to update to use the latest version to use RGT");
+                "Display a warning to update to use the latest version");
 
             if (requiresUpdate.Value)
             {
-                var PluginInfoLatest = new WebClient().DownloadString("https://pastebin.com/raw/LZPqbAwK");
-
-                isLatestUpdate = PluginInfoLatest.Contains(PluginInfo.Version);
+                try { isLatestUpdate = new WebClient().DownloadString("https://raw.githubusercontent.com/F6347/RankedGTAG/refs/heads/master/RankedGTAG/PluginInfo.cs").Contains(PluginInfo.Version); } // 🐀
+                catch { connectedToWifi = false; }
+                
             }
             
             GorillaTagger.OnPlayerSpawned(OnGameInitialized);
@@ -73,19 +74,20 @@ namespace RankedGTAG
 
         void OnGameInitialized()
         {
+
             mmr = PlayerPrefs.GetFloat("PlayerMMR");
 
             NetworkSystem.Instance.OnJoinedRoomEvent += OnJoinedLobby;
 
 
-            huntWatch = GameObject.Find("Player Objects/Local VRRig/Local Gorilla Player/RigAnchor/rig/body/shoulder.L/upper_arm.L/forearm.L/hand.L/huntcomputer (1)");
+            huntWatch = GorillaTagger.Instance.offlineVRRig.huntComputer;
+            tagManager = GameObject.Find("GT Systems/GameModeSystem/Gorilla Tag Manager").GetComponent<GorillaTagManager>(); // i'm sorry for using GameObject.Find, but I tried everything, and nothing worked. So before you do a pull request, PLEASE try it and see if "(GorillaTagManager)GorillaGameManager.instance" will actually work in this case. (i've tried that)
 
-            tagManager = GameObject.Find("GT Systems/GameModeSystem/Gorilla Tag Manager").GetComponent<GorillaTagManager>();
 
-            if (!isLatestUpdate)
+            if (!isLatestUpdate || !connectedToWifi)
             {
                 SetWatchActive(true);
-                watchText.text = "UPDATE!";
+                watchText.text = connectedToWifi ? "UPDATE!" : "CONNECT TO WIFI!";
                 watchColor.color = Color.red;
             }
 
@@ -112,7 +114,7 @@ namespace RankedGTAG
 
                     Vector3 vrrigPosDif = vrrigs[player].transform.position.Abs() - vrrigOldPos;
 
-                    vrrigsPositions[player][0] = vrrigPosDif.x + vrrigPosDif.z + vrrigPosDif.y > 0.5;
+                    vrrigsPositions[player][0] = vrrigPosDif.magnitude > 2f;
 
                     vrrigsPositions[player][1] = vrrigs[player].transform.position.Abs();
                 }
@@ -125,7 +127,7 @@ namespace RankedGTAG
             {
                 lastActuallyTaggedPlayer = otherPlayer;
                 points += allPlayersPoints[otherPlayer] / 20 + 30;
-                Console.WriteLine($"{localPlayer.NickName} has tagged {otherPlayer.NickName}!!");
+                Debug.Log($"{localPlayer.NickName} has tagged {otherPlayer.NickName}!!");
             }
 
             lastPlayerTagged = otherPlayer;
@@ -153,7 +155,7 @@ namespace RankedGTAG
 
 
             
-            watchText.text = $"MMR: {Round(mmr, 2)} {((bool)vrrigsPositions[localPlayer][0] ? "" : "MOVE!")}\nPOINTS: {Round(points)}\nLAST TAG:              {(lastActuallyTaggedPlayer == null ? "NONE" : lastActuallyTaggedPlayer.NickName)}";
+            watchText.text = $"MMR: {Round(mmr, 2)}\nPOINTS: {Round(points)} \n{(tagManager.IsInfected(localPlayer) ? $"LAST TAG:        {(lastActuallyTaggedPlayer == null ? "NONE" : lastActuallyTaggedPlayer.NickName)}" : (bool)vrrigsPositions[localPlayer][0] ? "" : "MOVE!")}";
             if (lastActuallyTaggedPlayer!=null) watchColor.color = vrrigs[lastActuallyTaggedPlayer].playerColor;
         }
 
@@ -163,11 +165,13 @@ namespace RankedGTAG
         {
             if (!NetworkSystem.Instance.GameModeString.Contains("INFECTION")) return;
 
-            Console.WriteLine("joined code");
-
-            foreach (var player in tagManager.currentInfected) { Console.WriteLine(player.NickName); }
+            Debug.Log("joined code");
 
             SetWatchActive(true);
+
+            await Task.Delay(500);
+
+            points = PlayerPrefs.GetFloat("StartingPlayerPoints");
 
             localPlayer = NetworkSystem.Instance.LocalPlayer;
 
@@ -176,7 +180,7 @@ namespace RankedGTAG
             NetworkSystem.Instance.OnPlayerJoined += OnPlayerJoined;
             NetworkSystem.Instance.OnPlayerLeft += OnPlayerLeft;
 
-            await Task.Delay(250);
+            
 
             inInfectionRoom = true;
         }
@@ -187,6 +191,8 @@ namespace RankedGTAG
             vrrigs.Clear();
             vrrigsPositions.Clear();
             SetWatchActive(false);
+
+            
 
             NetworkSystem.Instance.OnReturnedToSinglePlayer -= OnLeftLobby;
 
@@ -235,19 +241,22 @@ namespace RankedGTAG
         async void OnRoundRestarted()
         {
             await Task.Delay(500);
+
+            // ask two times to verify if the round is actually over, evits errors
             if (points == -0.1f || tagManager.currentInfected.Count != NetworkSystem.Instance.RoomPlayerCount) return;
 
-            Console.WriteLine("round finished");
+            Debug.Log("round finished");
 
-            Console.WriteLine(points);
+            Debug.Log (points);
 
             mmr += points / 10 - mmr;
 
             PlayerPrefs.SetFloat("PlayerMMR", mmr);
+            PlayerPrefs.SetFloat("StartingPlayerPoints", points);
 
             points = -0.1f;
 
-            Console.WriteLine(mmr);
+            Debug.Log(mmr);
 
             var allPlayersPointsCopy = new Dictionary<NetPlayer, float>();
 
@@ -258,7 +267,7 @@ namespace RankedGTAG
 
             foreach (var point in allPlayersPointsCopy)
             {
-                Console.WriteLine(point.Key.NickName + ' ' + point.Value.ToString());
+                Debug.Log(point.Key.NickName + ' ' + point.Value.ToString());
                 allPlayersPoints[point.Key] /= 2;
             }
         }
