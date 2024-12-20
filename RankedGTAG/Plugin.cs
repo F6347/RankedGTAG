@@ -26,7 +26,7 @@ namespace RankedGTAG
 
         float mmr;
 
-        float delay = 11;
+        float delay = 69420;
 
         float points;
 
@@ -38,21 +38,20 @@ namespace RankedGTAG
 
         NetPlayer lastActuallyTaggedPlayer;
 
+        NetPlayer[] playerList;
+        NetPlayer[] allPlayers;
+
         Dictionary<NetPlayer, VRRig> vrrigs = new Dictionary<NetPlayer, VRRig>();
 
         Dictionary<NetPlayer, object[]> vrrigsPositions = new Dictionary<NetPlayer, object[]>();
 
         Dictionary<NetPlayer, float> allPlayersPoints = new Dictionary<NetPlayer, float>();
 
-        NetPlayer[] playerList;
-        NetPlayer[] allPlayers;
-
         bool isLatestUpdate = true;
 
         bool connectedToWifi = true;
 
         ConfigEntry<bool> requiresUpdate;
-
 
         void OnEnable()
         {
@@ -65,7 +64,6 @@ namespace RankedGTAG
             {
                 try { isLatestUpdate = new WebClient().DownloadString("https://raw.githubusercontent.com/F6347/RankedGTAG/refs/heads/master/RankedGTAG/PluginInfo.cs").Contains(PluginInfo.Version); } // 🐀
                 catch { connectedToWifi = false; }
-                
             }
             
             GorillaTagger.OnPlayerSpawned(OnGameInitialized);
@@ -74,7 +72,6 @@ namespace RankedGTAG
 
         void OnGameInitialized()
         {
-
             mmr = PlayerPrefs.GetFloat("PlayerMMR");
 
             NetworkSystem.Instance.OnJoinedRoomEvent += OnJoinedLobby;
@@ -87,11 +84,9 @@ namespace RankedGTAG
             if (!isLatestUpdate || !connectedToWifi)
             {
                 SetWatchActive(true);
-                watchText.text = connectedToWifi ? "UPDATE!" : "CONNECT TO WIFI!";
+                watchText.text = connectedToWifi ? "\n\nUPDATE!" : "\nCONNECT TO WIFI!";
                 watchColor.color = Color.red;
             }
-
-
             Update(); // this was added so Update wouldnt be grayed out, i dispise visual studio, fuck visual studio. why can i not turn that off? Words would get me banned from GTMG if i sayed how much i dispise microsoft and vs. so i will not.
         }
 
@@ -112,9 +107,7 @@ namespace RankedGTAG
 
                     Vector3 vrrigOldPos = (Vector3)vrrigsPositions[player][1];
 
-                    Vector3 vrrigPosDif = vrrigs[player].transform.position.Abs() - vrrigOldPos;
-
-                    vrrigsPositions[player][0] = vrrigPosDif.magnitude > 2f;
+                    vrrigsPositions[player][0] = (vrrigs[player].transform.position.Abs() - vrrigOldPos).magnitude > 2f;
 
                     vrrigsPositions[player][1] = vrrigs[player].transform.position.Abs();
                 }
@@ -167,20 +160,18 @@ namespace RankedGTAG
 
             Debug.Log("joined code");
 
-            SetWatchActive(true);
-
-            await Task.Delay(500);
-
             points = PlayerPrefs.GetFloat("StartingPlayerPoints");
 
             localPlayer = NetworkSystem.Instance.LocalPlayer;
+
+            await Task.Delay(500);
+
+            SetWatchActive(true);
 
             NetworkSystem.Instance.OnReturnedToSinglePlayer += OnLeftLobby;
 
             NetworkSystem.Instance.OnPlayerJoined += OnPlayerJoined;
             NetworkSystem.Instance.OnPlayerLeft += OnPlayerLeft;
-
-            
 
             inInfectionRoom = true;
         }
@@ -192,15 +183,12 @@ namespace RankedGTAG
             vrrigsPositions.Clear();
             SetWatchActive(false);
 
-            
-
             NetworkSystem.Instance.OnReturnedToSinglePlayer -= OnLeftLobby;
 
             NetworkSystem.Instance.OnPlayerJoined -= OnPlayerJoined;
             NetworkSystem.Instance.OnPlayerLeft -= OnPlayerLeft;
 
             inInfectionRoom = false;
-
         }
 
         void OnPlayerJoined(NetPlayer player)
@@ -242,8 +230,8 @@ namespace RankedGTAG
         {
             await Task.Delay(500);
 
-            // ask two times to verify if the round is actually over, evits errors
-            if (points == -0.1f || tagManager.currentInfected.Count != NetworkSystem.Instance.RoomPlayerCount) return;
+            // verifies two times to verify if the round is actually over.
+            if (points == -0.01f || tagManager.currentInfected.Count != NetworkSystem.Instance.RoomPlayerCount) return;
 
             Debug.Log("round finished");
 
@@ -254,7 +242,7 @@ namespace RankedGTAG
             PlayerPrefs.SetFloat("PlayerMMR", mmr);
             PlayerPrefs.SetFloat("StartingPlayerPoints", points);
 
-            points = -0.1f;
+            points = -0.01f;
 
             Debug.Log(mmr);
 
