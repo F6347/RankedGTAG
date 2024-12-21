@@ -18,7 +18,7 @@ namespace RankedGTAG
     
     [BepInPlugin(PluginInfo.GUID, PluginInfo.Name, PluginInfo.Version)]
 
-    [BepInIncompatibility("")]
+    [BepInIncompatibility("com.NeoTechGorillas.gorillatag.gorillawatch")]
     public class Plugin : BaseUnityPlugin
     {
         bool isWatchActive;
@@ -121,7 +121,7 @@ namespace RankedGTAG
             if (isACheater)
             {
                 SetWatchActive(true);
-                watchText.text = $"hi :3 so, uninstall {string.Join(", ", cheatsInstalledByPlayer)} to use this mod!".ToUpper();
+                watchText.text = $"hi cheetah, you must uninstall {string.Join(", ", cheatsInstalledByPlayer)} to use this mod!".ToUpper();
             }
 
             else if (!isLatestUpdate || !connectedToWifi)
@@ -140,23 +140,21 @@ namespace RankedGTAG
 
             delay += Time.deltaTime;
 
-            if (delay > 2)
+            foreach (var player in allPlayers)
             {
-                delay = 0;
+                try { var vrrig = GetPlayersVRRig(player); }
+                catch { return; }
 
-                foreach (var player in allPlayers)
+                vrrigsPositions[player][0] = (GetPlayersVRRig(player).transform.position.Abs() - (Vector3)vrrigsPositions[player][1] ).magnitude > 1f ? 0f : (float)vrrigsPositions[player][0] + Time.deltaTime;
+
+                if (delay > 2.5f)
                 {
-                    try { var vrrig = GetPlayersVRRig(player); }
-                    catch { return; }
-
-                    Vector3 vrrigOldPos = (Vector3)vrrigsPositions[player][1];
-
-                    vrrigsPositions[player][0] = (GetPlayersVRRig(player).transform.position.Abs() - vrrigOldPos).magnitude > 2f;
-
                     vrrigsPositions[player][1] = GetPlayersVRRig(player).transform.position.Abs();
+                    delay = 0f;
                 }
             }
 
+            Console.WriteLine((float)vrrigsPositions[localPlayer][0] < 15);
 
             var otherPlayer = GorillaTagger.Instance.otherPlayer;
 
@@ -171,17 +169,15 @@ namespace RankedGTAG
 
             foreach (var player in playerList)
             {
-                bool isPlayerMoving = false;
+                bool isPlayerMoving = (float)vrrigsPositions[player][0] < 15;
                 
-                try { isPlayerMoving = (bool)vrrigsPositions[player][0]; } catch { }
-
                 if (tagManager.currentInfected.Contains(player) || !isPlayerMoving) continue;
                 
                 allPlayersPoints[player] += Time.deltaTime;
                 
             }
 
-            if (!tagManager.IsInfected(localPlayer)) points += Time.deltaTime * ((bool)vrrigsPositions[localPlayer][0] ? 1 : 0.25f);
+            if (!tagManager.IsInfected(localPlayer)) points += ((float)vrrigsPositions[localPlayer][0] < 15 ? Time.deltaTime : 0f);
 
             if (tagManager.currentInfected.Count == NetworkSystem.Instance.RoomPlayerCount) OnRoundRestarted();
 
@@ -189,7 +185,7 @@ namespace RankedGTAG
 
             watchText.text = $"MMR: {Round(mmr, 2)}\n" +
                 $"POINTS: {Round(points)} \n" +
-                $"{(tagManager.IsInfected(localPlayer) ? $"LAST TAG:           {(lastActuallyTaggedPlayer == null ? "NONE" : lastActuallyTaggedPlayer.NickName)}" : $"ROUND: {roundsCounter}\n{((bool)vrrigsPositions[localPlayer][0] ? "" : "MOVE!")}")}";
+                $"{(tagManager.IsInfected(localPlayer) ? $"LAST TAG:           {(lastActuallyTaggedPlayer == null ? "NONE" : lastActuallyTaggedPlayer.NickName)}" : $"ROUND: {roundsCounter}\n{((float)vrrigsPositions[localPlayer][0] < 10 ? "" : "MOVE!")}")}";
             
             if (!tagManager.IsInfected(localPlayer)) SetMaterialColor(Color.clear);
             else if (lastActuallyTaggedPlayer != null) SetMaterialColor(GetPlayersVRRig(lastActuallyTaggedPlayer).playerColor);
@@ -228,7 +224,7 @@ namespace RankedGTAG
             {
                 var playerVRRig = playerRig.GetComponent<VRRig>();
 
-                vrrigsPositions.TryAdd(playerVRRig.OwningNetPlayer, new object[] { false, Vector3.zero });
+                vrrigsPositions.TryAdd(playerVRRig.OwningNetPlayer, new object[] { 0f, Vector3.zero });
 
                 allPlayersPoints.TryAdd(playerVRRig.OwningNetPlayer, 0);
             }
