@@ -67,17 +67,20 @@ namespace RankedGTAG
         
 
 
-        void CheckForIncompatibleMods(string[] blockedMods)
+        void CheckForCheats(string[] blockedMods)
         {
             foreach (var blockedMod in blockedMods)
             {
                 var currentBlockedMod = Chainloader.PluginInfos.Values.FirstOrDefault(mod => mod.Metadata.GUID.ToLower().Contains(blockedMod));
 
-                if (currentBlockedMod != null)
-                {
-                    cheatsInstalledByPlayer.Add(currentBlockedMod.Metadata.Name);
-                    isACheater = true;
-                }
+                if (currentBlockedMod == null || blockedMod == "") continue;
+                
+                Console.WriteLine(currentBlockedMod.Metadata.GUID);
+
+                cheatsInstalledByPlayer.Add(currentBlockedMod.Metadata.Name);
+
+                isACheater = true;
+                
             }
 
             if (!isACheater) return;
@@ -105,7 +108,7 @@ namespace RankedGTAG
 
         void OnGameInitialized()
         {
-            if (connectedToWifi) CheckForIncompatibleMods(new WebClient().DownloadString("https://raw.githubusercontent.com/F6347/RankedGTAG/refs/heads/master/RankedGTAG/blockedModsList.txt").Split("\n")); // 🐀 v2
+            if (connectedToWifi) CheckForCheats(new WebClient().DownloadString("https://raw.githubusercontent.com/F6347/RankedGTAG/refs/heads/master/RankedGTAG/blockedModsList.txt").Split("\n")); // 🐀 v2
 
             mmr = PlayerPrefs.GetFloat("PlayerMMR");
 
@@ -301,7 +304,6 @@ namespace RankedGTAG
             {
                 allPlayersPointsCopy.Add(point.Key, point.Value);
             }
-
             
             foreach (var point in allPlayersPointsCopy)
             {
