@@ -1,18 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using BepInEx;
+using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using Cinemachine.Utility;
+using Photon.Pun;
 using UnityEngine;
 using UnityEngine.UI;
 using static System.Math;
 
 namespace RankedGTAG
 {
+    
     [BepInPlugin(PluginInfo.GUID, PluginInfo.Name, PluginInfo.Version)]
+
+    [BepInIncompatibility("")]
     public class Plugin : BaseUnityPlugin
     {
         bool isWatchActive;
@@ -52,7 +58,32 @@ namespace RankedGTAG
 
         bool connectedToWifi = true;
 
+        bool isACheater;
+
+        List<string> cheatsInstalledByPlayer = new List<string>();
+
         ConfigEntry<bool> requiresUpdate;
+
+        
+
+
+        void CheckForIncompatibleMods(string[] blockedMods)
+        {
+            foreach (var blockedMod in blockedMods)
+            {
+                var currentBlockedMod = Chainloader.PluginInfos.Values.FirstOrDefault(mod => mod.Metadata.GUID.ToLower().Contains(blockedMod));
+
+                if (currentBlockedMod != null)
+                {
+                    cheatsInstalledByPlayer.Add(currentBlockedMod.Metadata.Name);
+                    isACheater = true;
+                }
+            }
+
+            if (!isACheater) return;
+            Debug.LogError($"hi :3 so, uninstall {string.Join(", ", cheatsInstalledByPlayer)} to use this mod!");
+
+        }
 
         void OnEnable()
         {
@@ -67,12 +98,15 @@ namespace RankedGTAG
                 catch { connectedToWifi = false; }
             }
             
+            
             GorillaTagger.OnPlayerSpawned(OnGameInitialized);
             HarmonyPatches.ApplyHarmonyPatches();
         }
 
         void OnGameInitialized()
         {
+            if (connectedToWifi) CheckForIncompatibleMods(new WebClient().DownloadString("https://raw.githubusercontent.com/F6347/RankedGTAG/refs/heads/master/RankedGTAG/blockedModsList.txt").Split("\n")); // 🐀 v2
+
             mmr = PlayerPrefs.GetFloat("PlayerMMR");
 
             NetworkSystem.Instance.OnJoinedRoomEvent += OnJoinedLobby;
@@ -81,17 +115,24 @@ namespace RankedGTAG
             huntWatch = GorillaTagger.Instance.offlineVRRig.huntComputer;
             tagManager = GameObject.Find("GT Systems/GameModeSystem/Gorilla Tag Manager").GetComponent<GorillaTagManager>(); // i'm sorry for using GameObject.Find, but I tried everything, and nothing worked. So before you do a pull request, PLEASE try it and see if "(GorillaTagManager)GorillaGameManager.instance" will actually work in this case. (i've tried that)
 
+            if (isACheater)
+            {
+                SetWatchActive(true);
+                watchText.text = $"hi :3 so, uninstall {string.Join(", ", cheatsInstalledByPlayer)} to use this mod!".ToUpper();
+            }
 
-            if (!isLatestUpdate || !connectedToWifi)
+            else if (!isLatestUpdate || !connectedToWifi)
             {
                 SetWatchActive(true);
                 watchText.text = connectedToWifi ? "\n\nUPDATE!" : "\nCONNECT TO WIFI!";
             }
+
             Update(); // this was added so Update wouldnt be grayed out, i dispise visual studio, fuck visual studio. why can i not turn that off? Words would get me banned from GTMG if i sayed how much i dispise microsoft and vs. so i will not.
         }
 
         void Update()
         {
+            if (isACheater && PhotonNetwork.InRoom) Application.Quit();
             if (!inInfectionRoom) return;
 
             delay += Time.deltaTime;
@@ -142,17 +183,28 @@ namespace RankedGTAG
             if (tagManager.currentInfected.Count == NetworkSystem.Instance.RoomPlayerCount) OnRoundRestarted();
 
 
+
+            watchText.text = $"MMR: {Round(mmr, 2)}\n" +
+                $"POINTS: {Round(points)} \n" +
+                $"{(tagManager.IsInfected(localPlayer) ? $"LAST TAG:           {(lastActuallyTaggedPlayer == null ? "NONE" : lastActuallyTaggedPlayer.NickName)}" : $"ROUND: {roundsCounter}\n{((bool)vrrigsPositions[localPlayer][0] ? "" : "MOVE!")}")}";
             
-            watchText.text = $"MMR: {Round(mmr, 2)}\nPOINTS: {Round(points)} \n{(tagManager.IsInfected(localPlayer) ? $"LAST TAG:        {(lastActuallyTaggedPlayer == null ? "NONE" : lastActuallyTaggedPlayer.NickName)}" : (bool)vrrigsPositions[localPlayer][0] ? "" : "MOVE!")}";
-            if (lastActuallyTaggedPlayer != null) SetMaterialColor(GetPlayersVRRig(lastActuallyTaggedPlayer).playerColor);
-            else { SetMaterialColor(Color.clear); }
+            if (!tagManager.IsInfected(localPlayer)) SetMaterialColor(Color.clear);
+            else if (lastActuallyTaggedPlayer != null) SetMaterialColor(GetPlayersVRRig(lastActuallyTaggedPlayer).playerColor);
         }
 
         
 
         async void OnJoinedLobby()
         {
-            if (!NetworkSystem.Instance.GameModeString.Contains("INFECTION")) return;
+            if (!NetworkSystem.Instance.GameModeString.Contains("INFECTION") || NetworkSystem.Instance.GameModeString.Contains("MODDED") || isACheater || !connectedToWifi) return;
+
+            SetWatchActive(true);
+
+            if (NetworkSystem.Instance.RoomPlayerCount < 5) 
+            {
+                watchText.text = "\n GET MORE PLAYERS TO COUNT YOUR POINTS!";
+                return;
+            }
 
             Debug.Log("joined code");
 
@@ -165,7 +217,7 @@ namespace RankedGTAG
 
             await Task.Delay(500);
 
-            SetWatchActive(true);
+            
 
             points = PlayerPrefs.GetFloat("StartingPlayerPoints");
 
@@ -234,6 +286,7 @@ namespace RankedGTAG
 
             mmr += points / 10 - mmr + 3;
             roundsCounter++;
+            lastActuallyTaggedPlayer = null;
 
             PlayerPrefs.SetFloat("PlayerMMR", mmr);
             PlayerPrefs.SetFloat("StartingPlayerPoints", points);
