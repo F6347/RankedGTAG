@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -21,24 +20,19 @@ namespace RankedGTAG
     [BepInIncompatibility("com.NeoTechGorillas.gorillatag.gorillawatch")]
     public class Plugin : BaseUnityPlugin
     {
-        bool isWatchActive;
+        
 
         GorillaTagManager tagManager;
 
         GameObject huntWatch;
-
         Text watchText;
-
         Image watchColor;
 
         int roundsCounter;
-
         float mmr;
-
         float delay = 69420;
-
+        float watchToggleDelay;
         float points;
-
         bool inInfectionRoom;
 
         NetPlayer localPlayer;
@@ -46,36 +40,27 @@ namespace RankedGTAG
         NetPlayer lastPlayerTagged;
 
         NetPlayer lastActuallyTaggedPlayer;
-
         NetPlayer[] playerList;
         NetPlayer[] allPlayers;
-
         Dictionary<NetPlayer, object[]> vrrigsPositions = new Dictionary<NetPlayer, object[]>();
-
         Dictionary<NetPlayer, float> allPlayersPoints = new Dictionary<NetPlayer, float>();
 
         bool isLatestUpdate = true;
-
         bool connectedToWifi = true;
-
         bool isACheater;
+        bool isWatchActive;
 
         List<string> cheatsInstalledByPlayer = new List<string>();
-
         ConfigEntry<bool> requiresUpdate;
-
-        
-
+        ConfigEntry<float> watchToggleDelayTime;
 
         void CheckForCheats(string[] blockedMods)
         {
             foreach (var blockedMod in blockedMods)
             {
-                var currentBlockedMod = Chainloader.PluginInfos.Values.FirstOrDefault(mod => mod.Metadata.GUID.ToLower().Contains(blockedMod));
+                var currentBlockedMod = Chainloader.PluginInfos.Values.FirstOrDefault(mod => mod.Metadata.GUID.ToLower().Contains(blockedMod.Trim()));
 
                 if (currentBlockedMod == null || blockedMod == "") continue;
-                
-                Console.WriteLine(currentBlockedMod.Metadata.GUID);
 
                 cheatsInstalledByPlayer.Add(currentBlockedMod.Metadata.Name);
 
@@ -94,6 +79,11 @@ namespace RankedGTAG
                 "requiresUpdate",
                 true,
                 "Display a warning to update to use the latest version");
+
+            watchToggleDelayTime = Config.Bind("Watch",
+                "watchToggleDelayTime",
+                1f,
+                "Time it takes to the watch to be toggled between on and off if pressing B and Y. Type -1f to deactivate this feature.");
 
             if (requiresUpdate.Value)
             {
@@ -140,6 +130,16 @@ namespace RankedGTAG
 
             delay += Time.deltaTime;
 
+
+            if (watchToggleDelayTime.Value != -1f)
+            {
+                if (ControllerInputPoller.instance.rightControllerSecondaryButton && ControllerInputPoller.instance.leftControllerSecondaryButton && watchToggleDelay < watchToggleDelayTime.Value) watchToggleDelay += Time.deltaTime;
+                else watchToggleDelay = 0;
+
+                if (watchToggleDelay > watchToggleDelayTime.Value) SetWatchActive(!isWatchActive);
+            }
+            
+
             foreach (var player in allPlayers)
             {
                 try { var vrrig = GetPlayersVRRig(player); }
@@ -154,8 +154,6 @@ namespace RankedGTAG
                 }
             }
 
-            Console.WriteLine((float)vrrigsPositions[localPlayer][0] < 15);
-
             var otherPlayer = GorillaTagger.Instance.otherPlayer;
 
             if ((otherPlayer ?? lastPlayerTagged) != lastPlayerTagged && !GorillaLocomotion.Player.Instance.disableMovement)
@@ -169,15 +167,10 @@ namespace RankedGTAG
 
             foreach (var player in playerList)
             {
-                bool isPlayerMoving = (float)vrrigsPositions[player][0] < 15;
-                
-                if (tagManager.currentInfected.Contains(player) || !isPlayerMoving) continue;
-                
-                allPlayersPoints[player] += Time.deltaTime;
-                
+                if (!tagManager.IsInfected(player)) allPlayersPoints[player] += Time.deltaTime * ((float)vrrigsPositions[player][0] < 15 ? 1f : -0.25f); ;
             }
 
-            if (!tagManager.IsInfected(localPlayer)) points += ((float)vrrigsPositions[localPlayer][0] < 15 ? Time.deltaTime : 0f);
+            if (!tagManager.IsInfected(localPlayer)) points += Time.deltaTime * ((float)vrrigsPositions[localPlayer][0] < 15 ? 1f : -0.25f);
 
             if (tagManager.currentInfected.Count == NetworkSystem.Instance.RoomPlayerCount) OnRoundRestarted();
 
@@ -197,11 +190,12 @@ namespace RankedGTAG
         {
             if (!NetworkSystem.Instance.GameModeString.Contains("INFECTION") || NetworkSystem.Instance.GameModeString.Contains("MODDED") || isACheater || !connectedToWifi) return;
 
-            SetWatchActive(true);
+            NetworkSystem.Instance.OnReturnedToSinglePlayer += OnLeftLobby;
 
             if (NetworkSystem.Instance.RoomPlayerCount < 5) 
             {
-                watchText.text = "\n GET MORE PLAYERS TO COUNT YOUR POINTS!";
+                SetWatchActive(true);
+                watchText.text = "GET MORE PLAYERS TO COUNT YOUR POINTS!";
                 return;
             }
 
@@ -216,7 +210,7 @@ namespace RankedGTAG
 
             await Task.Delay(500);
 
-            
+            SetWatchActive(true);
 
             points = PlayerPrefs.GetFloat("StartingPlayerPoints");
 
@@ -229,8 +223,6 @@ namespace RankedGTAG
                 allPlayersPoints.TryAdd(playerVRRig.OwningNetPlayer, 0);
             }
 
-            NetworkSystem.Instance.OnReturnedToSinglePlayer += OnLeftLobby;
-
             NetworkSystem.Instance.OnPlayerJoined += OnPlayerJoined;
             NetworkSystem.Instance.OnPlayerLeft += OnPlayerLeft;
 
@@ -241,6 +233,7 @@ namespace RankedGTAG
         {
             allPlayersPoints.Clear();
             vrrigsPositions.Clear();
+            
             SetWatchActive(false);
             roundsCounter = 0;
 
@@ -331,6 +324,8 @@ namespace RankedGTAG
             huntComputer.enabled = !setActive;
             huntWatch.SetActive(setActive);
         }
+
+
 
         VRRig GetPlayersVRRig(NetPlayer player) 
         { 
