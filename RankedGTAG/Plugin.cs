@@ -67,7 +67,6 @@ namespace RankedGTAG
                 isACheater = true;
                 
             }
-
             if (!isACheater) return;
             Debug.LogError($"hi :3 so, uninstall {string.Join(", ", cheatsInstalledByPlayer)} to use this mod!");
 
