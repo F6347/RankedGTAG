@@ -132,7 +132,7 @@ namespace RankedGTAG
 
             if (watchToggleDelayTime.Value != -1f)
             {
-                if (ControllerInputPoller.instance.rightControllerSecondaryButton && ControllerInputPoller.instance.leftControllerSecondaryButton && watchToggleDelay < watchToggleDelayTime.Value) watchToggleDelay += Time.deltaTime;
+                if (ControllerInputPoller.instance.rightControllerSecondaryButton && ControllerInputPoller.instance.leftControllerSecondaryButton) watchToggleDelay += Time.deltaTime;
                 else watchToggleDelay = 0;
 
                 if (watchToggleDelay > watchToggleDelayTime.Value) SetWatchActive(!isWatchActive);
