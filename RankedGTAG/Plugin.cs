@@ -124,7 +124,6 @@ namespace RankedGTAG
 
         void Update()
         {
-            if (isACheater && PhotonNetwork.InRoom) Application.Quit();
             if (!inInfectionRoom) return;
 
             delay += Time.deltaTime;
@@ -187,7 +186,8 @@ namespace RankedGTAG
 
         async void OnJoinedLobby()
         {
-            if (!NetworkSystem.Instance.GameModeString.Contains("INFECTION") || NetworkSystem.Instance.GameModeString.Contains("MODDED") || isACheater || !connectedToWifi) return;
+            if (isACheater) Application.Quit();
+            if (!NetworkSystem.Instance.GameModeString.Contains("INFECTION") || NetworkSystem.Instance.GameModeString.Contains("MODDED") || !connectedToWifi) return;
 
             NetworkSystem.Instance.OnReturnedToSinglePlayer += OnLeftLobby;
 
